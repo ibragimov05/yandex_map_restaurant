@@ -1,5 +1,4 @@
-import 'dart:async';
-
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:geolocator/geolocator.dart';
@@ -23,7 +22,6 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   YandexMapController? _yandexMapController;
   Point? _userCurrentPosition;
-  List _suggestionList = [];
   List<MapObject>? _polyLines;
   final TextEditingController _searchTextController = TextEditingController();
   final Set<PlacemarkMapObject> _set = {};
@@ -86,30 +84,32 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  Future<SuggestSessionResult> _suggest() async {
-    final resultWithSession = await YandexSuggest.getSuggestions(
-      text: _searchTextController.text,
-      boundingBox: const BoundingBox(
-        northEast: Point(latitude: 56.0421, longitude: 38.0284),
-        southWest: Point(latitude: 55.5143, longitude: 37.24841),
-      ),
-      suggestOptions: const SuggestOptions(
-        suggestType: SuggestType.geo,
-        suggestWords: true,
-        userPosition: Point(latitude: 56.0321, longitude: 38),
-      ),
-    );
-
-    return await resultWithSession.$2;
-  }
-
   @override
   Widget build(BuildContext context) {
     return _isFetchingAddress
         ? const Center(child: CircularProgressIndicator())
         : Scaffold(
+            appBar: AppBar(
+              backgroundColor: const Color.fromARGB(255, 10, 4, 45),
+              actions: [
+                IconButton(
+                  onPressed: () {
+                    FirebaseAuth.instance.signOut();
+                    Navigator.pushNamedAndRemoveUntil(
+                      context,
+                      '/sign-in',
+                      (route) => false,
+                    );
+                  },
+                  icon: const Icon(
+                    Icons.logout,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
             body: Stack(
-              children: [
+              children: <Widget>[
                 YandexMap(
                   nightModeEnabled: true,
                   onMapCreated: _onMapCreated,
@@ -120,7 +120,9 @@ class _MapScreenState extends State<MapScreen> {
                         text: const PlacemarkText(
                           text: 'My location',
                           style: PlacemarkTextStyle(
-                              color: Colors.red, outlineColor: Colors.red),
+                            color: Colors.red,
+                            outlineColor: Colors.red,
+                          ),
                         ),
                         mapId: const MapObjectId('current_location'),
                         point: _userCurrentPosition!,
@@ -134,48 +136,62 @@ class _MapScreenState extends State<MapScreen> {
                     ...?_polyLines,
                     ..._set
                   ],
-                  onMapLongTap: (argument) async {
-                    Restaurant? restaurant = await showDialog(
-                      context: context,
-                      builder: (context) =>
-                          AddNewRestaurant(location: argument),
-                    );
-                    if (restaurant != null) {
-                      _set.add(
-                        PlacemarkMapObject(
-                          text: PlacemarkText(
-                            text: restaurant.title,
-                            style: const PlacemarkTextStyle(
-                              color: Colors.white,
-                              outlineColor: Colors.white,
-                            ),
-                          ),
-                          onTap: (mapObject, point) async {
-                            bool? isPolyline = await showDialog(
-                              context: context,
-                              builder: (context) =>
-                                  OnRestaurantTapped(restaurant: restaurant),
+                  onMapLongTap: FirebaseAuth.instance.currentUser!.email ==
+                          'test@gmail.com'
+                      ? (argument) async {
+                          Restaurant? restaurant = await showDialog(
+                            context: context,
+                            builder: (context) =>
+                                AddNewRestaurant(location: argument),
+                          );
+                          if (restaurant != null) {
+                            _set.add(
+                              PlacemarkMapObject(
+                                text: PlacemarkText(
+                                  text: restaurant.title,
+                                  style: const PlacemarkTextStyle(
+                                    color: Colors.white,
+                                    outlineColor: Colors.white,
+                                  ),
+                                ),
+                                onTap: (mapObject, point) async {
+                                  bool? isPolyline = await showDialog(
+                                    context: context,
+                                    builder: (context) => OnRestaurantTapped(
+                                      restaurant: restaurant,
+                                      onDeleteTap: () {
+                                        _set.removeWhere(
+                                          (element) =>
+                                              element.mapId ==
+                                              MapObjectId(restaurant.id),
+                                        );
+                                        setState(() {});
+                                      },
+                                    ),
+                                  );
+                                  if (isPolyline != null && isPolyline) {
+                                    _polyLines =
+                                        await YandexMapService.getDirection(
+                                            _userCurrentPosition!,
+                                            restaurant.location);
+                                    setState(() {});
+                                  }
+                                },
+                                mapId: MapObjectId(restaurant.id),
+                                point: argument,
+                                icon: PlacemarkIcon.single(
+                                  PlacemarkIconStyle(
+                                    image: BitmapDescriptor.fromAssetImage(
+                                      "assets/place.png",
+                                    ),
+                                  ),
+                                ),
+                              ),
                             );
-                            if (isPolyline != null && isPolyline) {
-                              _polyLines = await YandexMapService.getDirection(
-                                  _userCurrentPosition!, restaurant.location);
-                              setState(() {});
-                            }
-                          },
-                          mapId: MapObjectId(
-                              DateTime.now().microsecondsSinceEpoch.toString()),
-                          point: argument,
-                          icon: PlacemarkIcon.single(
-                            PlacemarkIconStyle(
-                              image: BitmapDescriptor.fromAssetImage(
-                                  "assets/place.png"),
-                            ),
-                          ),
-                        ),
-                      );
-                      setState(() {});
-                    }
-                  },
+                            setState(() {});
+                          }
+                        }
+                      : null,
                 ),
                 Padding(
                   padding: const EdgeInsets.only(right: 10.0),
@@ -207,64 +223,14 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ],
             ),
-            floatingActionButtonLocation:
-                FloatingActionButtonLocation.centerFloat,
-            floatingActionButton: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 10.0),
-                  child: FloatingActionButton(
-                    backgroundColor: const Color(0xFF1C1D22),
-                    onPressed: _userCurrentPosition != null
-                        ? _onMyLocationTapped
-                        : null,
-                    child: const Icon(
-                      Icons.navigation_outlined,
-                      color: Color(0xFFCCCCCC),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: TextField(
-                    controller: _searchTextController,
-                    style: const TextStyle(color: Colors.white),
-                    onChanged: (value) async {
-                      final res = await _suggest();
-                      if (res.items != null) {
-                        _suggestionList = res.items!.toSet().toList();
-                        setState(() {});
-                      }
-                    },
-                  ),
-                ),
-                SizedBox(
-                  height: _suggestionList.isNotEmpty ? 200 : 0,
-                  child: ListView.builder(
-                    itemCount: _suggestionList.length,
-                    itemBuilder: (context, index) {
-                      return Container(
-                        height: 50,
-                        margin: const EdgeInsets.all(10),
-                        child: Row(
-                          children: [
-                            Text(
-                              _suggestionList[index].subtitle.toString(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
+            floatingActionButton: FloatingActionButton(
+              backgroundColor: const Color(0xFF1C1D22),
+              onPressed:
+                  _userCurrentPosition != null ? _onMyLocationTapped : null,
+              child: const Icon(
+                Icons.navigation_outlined,
+                color: Color(0xFFCCCCCC),
+              ),
             ),
           );
   }

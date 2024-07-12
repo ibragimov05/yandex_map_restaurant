@@ -3,8 +3,13 @@ import 'package:lesson_16/data/models/restaurant.dart';
 
 class OnRestaurantTapped extends StatelessWidget {
   final Restaurant restaurant;
+  final void Function() onDeleteTap;
 
-  const OnRestaurantTapped({super.key, required this.restaurant});
+  const OnRestaurantTapped({
+    super.key,
+    required this.restaurant,
+    required this.onDeleteTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +36,13 @@ class OnRestaurantTapped extends StatelessWidget {
             Navigator.of(context).pop();
           },
           child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () {
+            onDeleteTap();
+            Navigator.of(context).pop();
+          },
+          child: const Text('Delete'),
         ),
         TextButton(
           onPressed: () {
